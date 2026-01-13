@@ -3,7 +3,7 @@ import axios from "axios"
 const axiosClient = axios.create({
   
   // baseURL: "https://crm-api.vasifytech.com/api",
-  baseURL: "http://localhost:5000/api",
+  baseURL: "https://vasifycrm-backend.onrender.com/api",
 })
 
 axiosClient.interceptors.request.use((config) => {

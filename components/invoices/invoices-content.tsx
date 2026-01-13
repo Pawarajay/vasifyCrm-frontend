@@ -103,8 +103,8 @@ const BACKEND_URL =
   // process.env.NEXT_PUBLIC_BACKEND_URL || "https://vasify-crm-backend-2.onrender.com"
 
 
-  // process.env.NEXT_PUBLIC_BACKEND_URL || "https://crm-api.vasifytech.com"
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000"
+  process.env.NEXT_PUBLIC_BACKEND_URL || "https://vasifycrm-backend.onrender.com/api"
+  // process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000"
 
 // Helper function to convert logo URL to base64
 const getLogoBase64 = async (): Promise<string> => {
