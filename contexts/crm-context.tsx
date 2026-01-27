@@ -124,6 +124,7 @@ const toDate = (value: unknown): Date | null => {
   const d = new Date(value as string)
   return Number.isNaN(d.getTime()) ? null : d
 }
+
 const normalizeCustomer = (raw: any): Customer => ({
   id: String(raw.id),
   name: raw.name,
@@ -220,7 +221,6 @@ const normalizeCustomer = (raw: any): Customer => ({
     (raw.next_renewal_date ?? raw.nextRenewalDate ?? null),
 })
 
-
 const normalizeLead = (raw: any): Lead =>
   ({
     id: String(raw.id),
@@ -264,8 +264,34 @@ const normalizeLead = (raw: any): Lead =>
     isConverted: Boolean(raw.is_converted ?? raw.isConverted ?? false),
     convertedCustomerId:
       raw.converted_customer_id ?? raw.convertedCustomerId ?? null,
-  } as Lead);
+  } as Lead)
 
+const normalizeRenewal = (raw: any): Renewal => ({
+  id: String(raw.id),
+  customerId: String(raw.customer_id ?? raw.customerId ?? ""),
+  service: raw.service ?? "",
+  amount:
+    typeof raw.amount === "number"
+      ? raw.amount
+      : Number(raw.amount ?? 0) || 0,
+  expiryDate:
+    toDate(raw.expiry_date ?? raw.expiryDate ?? raw.expiry_date ?? raw.expiryDate) ??
+    null,
+  status: raw.status ?? "active",
+  reminderDays:
+    typeof raw.reminder_days === "number"
+      ? raw.reminder_days
+      : typeof raw.reminderDays === "number"
+      ? raw.reminderDays
+      : Number(raw.reminder_days ?? raw.reminderDays ?? 30) || 30,
+  notes: raw.notes ?? "",
+  createdAt:
+    toDate(raw.created_at ?? raw.createdAt ?? raw.created_at ?? raw.createdAt) ??
+    new Date(),
+  updatedAt:
+    toDate(raw.updated_at ?? raw.updatedAt ?? raw.updated_at ?? raw.updatedAt) ??
+    new Date(),
+})
 
 export function CRMProvider({ children }: { children: React.ReactNode }) {
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -284,14 +310,21 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    void refreshData();
-  //    void refreshUsers();
-  // void refreshCustomers();
-  // void refreshLeads();
+    void refreshData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Run once when app mounts, but only if token is present
+  useEffect(() => {
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem("token") : null
 
+    if (!token) {
+      return
+    }
+
+    void refreshData()
+  }, [])
 
   const refreshData = async () => {
     setIsLoading(true)
@@ -315,83 +348,39 @@ export function CRMProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const refreshUsers = async () => {
+    try {
+      const token =
+        typeof window !== "undefined" ? localStorage.getItem("token") : null
 
+      if (!token) {
+        setUsers([])
+        return
+      }
 
+      const baseUrl =
+        // process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
+        process.env.NEXT_PUBLIC_API_URL || "https://crm-api.vasifytech.com/api"
+        
 
-const refreshUsers = async () => {
-  try {
-    const token =
-      typeof window !== "undefined" ? localStorage.getItem("token") : null
+      const response = await fetch(`${baseUrl}/users`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
 
-    if (!token) {
-      // Before login, you can keep this empty or a minimal fallback
+      if (response.ok) {
+        const data = await response.json()
+        setUsers(Array.isArray(data.users) ? data.users : [])
+      } else {
+        console.warn("Users request failed, status:", response.status)
+        setUsers([])
+      }
+    } catch (err) {
+      console.error("Failed to fetch users", err)
       setUsers([])
-      return
     }
-
-    const baseUrl =
-      process.env.NEXT_PUBLIC_API_URL || "https://vasifycrm-backend.onrender.com/api"
-      // process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
-
-    const response = await fetch(`${baseUrl}/users`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-
-    if (response.ok) {
-      const data = await response.json()
-      setUsers(Array.isArray(data.users) ? data.users : [])
-    } else {
-      console.warn("Users request failed, status:", response.status)
-      setUsers([])
-    }
-  } catch (err) {
-    console.error("Failed to fetch users", err)
-    setUsers([])
   }
-}
-
-
-// const refreshData = async () => {
-//   try {
-//     const token =
-//       typeof window !== "undefined" ? localStorage.getItem("token") : null;
-
-//     if (!token) {
-//       console.warn("refreshData skipped: no access token");
-//       return;
-//     }
-
-//     await Promise.all([
-//       refreshCustomers(),
-//       refreshLeads(),
-//       refreshDeals(),
-//       refreshTasks(),
-//       refreshInvoices(),
-//       refreshRenewals(),
-//       refreshUsers(), // include this here
-//     ]);
-//   } catch (err) {
-//     console.error("Failed to load CRM data:", err);
-//     throw err;
-//   }
-// };
-
-
-
-// Run once when app mounts, but only if token is present
-useEffect(() => {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
-
-  if (!token) {
-    return;
-  }
-
-  void refreshData();
-}, []);
-
 
   const refreshCustomers = async () => {
     try {
@@ -490,43 +479,50 @@ useEffect(() => {
       const response = await invoicesApi.getAll({ limit: 100 })
       const list = (response.invoices || []) as any[]
       setInvoices(
-        list.map((inv) => ({
-          id: String(inv.id),
-          customerId: String(inv.customer_id ?? inv.customerId),
-          customerName: inv.customer_name ?? inv.customerName ?? "",
-          invoiceNumber: inv.invoice_number ?? inv.invoiceNumber ?? "",
-          issueDate:
-            toDate(inv.created_at ?? inv.issueDate) ??
-            (inv.created_at ?? inv.issueDate),
-          dueDate:
-            toDate(inv.due_date ?? inv.dueDate) ??
-            (inv.due_date ?? inv.dueDate),
-          status: inv.status,
-          amount:
+        list.map((inv) => {
+          const amount =
             typeof inv.amount === "number"
               ? inv.amount
-              : Number(inv.amount ?? 0) || 0,
-          tax:
+              : Number(inv.amount ?? 0) || 0
+          const tax =
             typeof inv.tax === "number"
               ? inv.tax
-              : Number(inv.tax ?? 0) || 0,
-          discount:
+              : Number(inv.tax ?? 0) || 0
+          const discount =
             typeof inv.discount === "number"
               ? inv.discount
-              : Number(inv.discount ?? 0) || 0,
-          total:
+              : Number(inv.discount ?? 0) || 0
+          const total =
             typeof inv.total === "number"
               ? inv.total
-              : Number(inv.total ?? 0) || 0,
-          notes: inv.notes ?? "",
-          items: Array.isArray(inv.items) ? inv.items : [],
-          createdAt:
-            toDate(inv.created_at ?? inv.createdAt) ??
-            (inv.created_at ?? inv.createdAt),
-          updatedAt:
-            toDate(inv.updated_at ?? inv.updatedAt) ??
-            (inv.updated_at ?? inv.updatedAt),
-        })),
+              : Number(inv.total ?? 0) || amount + (amount * tax) / 100 - discount
+
+          return {
+            id: String(inv.id),
+            customerId: String(inv.customer_id ?? inv.customerId),
+            customerName: inv.customer_name ?? inv.customerName ?? "",
+            invoiceNumber: inv.invoice_number ?? inv.invoiceNumber ?? "",
+            issueDate:
+              toDate(inv.created_at ?? inv.issueDate) ??
+              (inv.created_at ?? inv.issueDate),
+            dueDate:
+              toDate(inv.due_date ?? inv.dueDate) ??
+              (inv.due_date ?? inv.dueDate),
+            status: inv.status ?? "draft",
+            amount,
+            tax,
+            discount,
+            total,
+            notes: inv.notes ?? "",
+            items: Array.isArray(inv.items) ? inv.items : [],
+            createdAt:
+              toDate(inv.created_at ?? inv.createdAt) ??
+              (inv.created_at ?? inv.createdAt),
+            updatedAt:
+              toDate(inv.updated_at ?? inv.updatedAt) ??
+              (inv.updated_at ?? inv.updatedAt),
+          } as Invoice
+        }),
       )
     } catch (err) {
       console.error("Failed to fetch invoices:", err)
@@ -535,226 +531,173 @@ useEffect(() => {
   }
 
   const refreshRenewals = async () => {
-  try {
-    const [renewalsResponse, remindersResponse] = await Promise.all([
-      renewalsApi.getAll({ limit: 100 }),
-      renewalsApi.getReminders(),
-    ]);
+    try {
+      const [renewalsResponse, remindersResponse] = await Promise.all([
+        renewalsApi.getAll({ limit: 100 }),
+        renewalsApi.getReminders(),
+      ])
 
-    const renewalsList = (renewalsResponse.renewals || []) as any[];
-    const remindersList = (remindersResponse.reminders || []) as any[];
+      const renewalsList = (renewalsResponse.renewals || []) as any[]
+      const remindersList = (remindersResponse.reminders || []) as any[]
 
-    setRenewals(
-      renewalsList.map((r) => ({
-        // carry original fields
-        ...r,
-        // normalize snake_case → camelCase
-        id: r.id,
-        customerId: r.customerId ?? r.customer_id,
-        service: r.service,
-        amount:
-          typeof r.amount === "number"
-            ? r.amount
-            : Number(r.amount ?? 0) || 0,
-        status: r.status,
-        reminderDays: r.reminderDays ?? r.reminder_days,
-        notes: r.notes,
-        // IMPORTANT: map expiry_date → expiryDate
-        expiryDate: toDate(r.expiryDate ?? r.expiry_date) ??
-          (r.expiryDate ?? r.expiry_date),
-
-        createdAt: toDate(r.createdAt ?? r.created_at) ??
-          (r.createdAt ?? r.created_at),
-        updatedAt: toDate(r.updatedAt ?? r.updated_at) ??
-          (r.updatedAt ?? r.updated_at),
-
-        // keep these if your type uses them
-        startDate: toDate(r.startDate) ?? r.startDate,
-        endDate: toDate(r.endDate) ?? r.endDate,
-      })),
-    );
-
-    setRenewalReminders(
-      remindersList.map((rr) => ({
-        ...rr,
-        createdAt: toDate(rr.createdAt ?? rr.created_at) ??
-          (rr.createdAt ?? rr.created_at),
-        updatedAt: toDate(rr.updatedAt ?? rr.updated_at) ??
-          (rr.updatedAt ?? rr.updated_at),
-        expiryDate: toDate(rr.expiryDate ?? rr.expiry_date) ??
-          (rr.expiryDate ?? rr.expiry_date),
-        lastReminderSent:
-          toDate(rr.lastReminderSent ?? rr.last_reminder_sent) ??
-          (rr.lastReminderSent ?? rr.last_reminder_sent),
-        reminderDays: Array.isArray(rr.reminderDays ?? rr.reminder_days)
-          ? (rr.reminderDays ?? rr.reminder_days)
-          : (() => {
-              try {
-                return JSON.parse(
-                  (rr.reminderDays ??
-                    rr.reminder_days ??
-                    "[]") as string,
-                ) as number[];
-              } catch {
-                return [];
-              }
-            })(),
-      })),
-    );
-  } catch (err) {
-    console.error("Failed to fetch renewals:", err);
-    throw err;
-  }
-};
-
-  // const addCustomer = async (
-  //   customerData: Omit<Customer, "id" | "createdAt" | "updatedAt">,
-  // ): Promise<boolean> => {
-  //   try {
-  //     const payload = {
-  //       ...customerData,
-  //       totalValue:
-  //         customerData.totalValue !== undefined &&
-  //         customerData.totalValue !== null &&
-  //         customerData.totalValue !== ""
-  //           ? Number(customerData.totalValue)
-  //           : 0,
-  //     }
-
-  //     const response = await customersApi.create(payload)
-  //     if (response.customer) {
-  //       const c = normalizeCustomer(response.customer)
-  //       setCustomers((prev) => [c, ...prev])
-  //       return true
-  //     }
-  //     return false
-  //   } catch (err) {
-  //     console.error("Failed to add customer:", err)
-  //     throw err
-  //   }
-  // }
-  
-//testing
-const normalizeRenewal = (raw: any): Renewal => ({
-  id: String(raw.id),
-  customerId: String(raw.customer_id ?? raw.customerId ?? ""),
-  service: raw.service ?? "",
-  amount:
-    typeof raw.amount === "number"
-      ? raw.amount
-      : Number(raw.amount ?? 0) || 0,
-  expiryDate:
-    toDate(raw.expiry_date ?? raw.expiryDate ?? raw.expiry_date ?? raw.expiryDate) ?? null,
-  status: raw.status ?? "active",
-  reminderDays:
-    typeof raw.reminder_days === "number"
-      ? raw.reminder_days
-      : typeof raw.reminderDays === "number"
-      ? raw.reminderDays
-      : Number(raw.reminder_days ?? raw.reminderDays ?? 30) || 30,
-  notes: raw.notes ?? "",
-  createdAt:
-    toDate(raw.created_at ?? raw.createdAt ?? raw.created_at ?? raw.createdAt) ?? new Date(),
-  updatedAt:
-    toDate(raw.updated_at ?? raw.updatedAt ?? raw.updated_at ?? raw.updatedAt) ?? new Date(),
-})
-
-const addCustomer = async (
-  customerData: Omit<Customer, "id" | "createdAt" | "updatedAt">,
-): Promise<boolean> => {
-  try {
-    const payload = {
-      ...customerData,
-      totalValue:
-        customerData.totalValue !== undefined &&
-        customerData.totalValue !== null &&
-        (customerData.totalValue as any) !== ""
-          ? Number(customerData.totalValue)
-          : 0,
-    }
-
-    const response = await customersApi.create(payload)
-    console.log("CREATE CUSTOMER RESPONSE", response)
-
-    if (response.customer) {
-      const c = normalizeCustomer(response.customer)
-      setCustomers((prev) => [c, ...prev])
-
-      // Handle auto-generated invoice
-      if (response.invoice) {
-        const inv = response.invoice as any
-        const normalizedInvoice: Invoice = {
-          id: String(inv.id),
-          customerId: c.id,
-          customerName: c.name ?? "",
-          invoiceNumber: inv.invoiceNumber ?? "",
-          issueDate: c.createdAt ?? new Date(),
-          dueDate: null,
-          status: inv.status ?? "draft",
+      setRenewals(
+        renewalsList.map((r) => ({
+          ...r,
+          id: r.id,
+          customerId: r.customerId ?? r.customer_id,
+          service: r.service,
           amount:
-            typeof inv.amount === "number"
-              ? inv.amount
-              : Number(inv.amount ?? 0) || 0,
-          tax: 0,
-          discount: 0,
-          total:
-            typeof inv.total === "number"
-              ? inv.total
-              : Number(inv.total ?? 0) || 0,
-          notes: "",
-          items: [],
-          createdAt: new Date(),
-          updatedAt: new Date(),
+            typeof r.amount === "number"
+              ? r.amount
+              : Number(r.amount ?? 0) || 0,
+          status: r.status,
+          reminderDays: r.reminderDays ?? r.reminder_days,
+          notes: r.notes,
+          expiryDate:
+            toDate(r.expiryDate ?? r.expiry_date) ??
+            (r.expiryDate ?? r.expiry_date),
+          createdAt:
+            toDate(r.createdAt ?? r.created_at) ??
+            (r.createdAt ?? r.created_at),
+          updatedAt:
+            toDate(r.updatedAt ?? r.updated_at) ??
+            (r.updatedAt ?? r.updated_at),
+          startDate: toDate(r.startDate) ?? r.startDate,
+          endDate: toDate(r.endDate) ?? r.endDate,
+        })),
+      )
+
+      setRenewalReminders(
+        remindersList.map((rr) => ({
+          ...rr,
+          createdAt:
+            toDate(rr.createdAt ?? rr.created_at) ??
+            (rr.createdAt ?? rr.created_at),
+          updatedAt:
+            toDate(rr.updatedAt ?? rr.updated_at) ??
+            (rr.updatedAt ?? rr.updated_at),
+          expiryDate:
+            toDate(rr.expiryDate ?? rr.expiry_date) ??
+            (rr.expiryDate ?? rr.expiry_date),
+          lastReminderSent:
+            toDate(rr.lastReminderSent ?? rr.last_reminder_sent) ??
+            (rr.lastReminderSent ?? rr.last_reminder_sent),
+          reminderDays: Array.isArray(rr.reminderDays ?? rr.reminder_days)
+            ? (rr.reminderDays ?? rr.reminder_days)
+            : (() => {
+                try {
+                  return JSON.parse(
+                    (rr.reminderDays ??
+                      rr.reminder_days ??
+                      "[]") as string,
+                  ) as number[]
+                } catch {
+                  return []
+                }
+              })(),
+        })),
+      )
+    } catch (err) {
+      console.error("Failed to fetch renewals:", err)
+      throw err
+    }
+  }
+
+  const addCustomer = async (
+    customerData: Omit<Customer, "id" | "createdAt" | "updatedAt">,
+  ): Promise<boolean> => {
+    try {
+      const payload = {
+        ...customerData,
+        totalValue:
+          customerData.totalValue !== undefined &&
+          customerData.totalValue !== null &&
+          (customerData.totalValue as any) !== ""
+            ? Number(customerData.totalValue)
+            : 0,
+      }
+
+      const response = await customersApi.create(payload)
+      console.log("CREATE CUSTOMER RESPONSE", response)
+
+      if (response.customer) {
+        const c = normalizeCustomer(response.customer)
+        setCustomers((prev) => [c, ...prev])
+
+        // Handle auto-generated invoice
+        if (response.invoice) {
+          const inv = response.invoice as any
+          const normalizedInvoice: Invoice = {
+            id: String(inv.id),
+            customerId: c.id,
+            customerName: c.name ?? "",
+            invoiceNumber: inv.invoiceNumber ?? "",
+            issueDate: c.createdAt ?? new Date(),
+            dueDate: null,
+            status: inv.status ?? "draft",
+            amount:
+              typeof inv.amount === "number"
+                ? inv.amount
+                : Number(inv.amount ?? 0) || 0,
+            tax: 0,
+            discount: 0,
+            total:
+              typeof inv.total === "number"
+                ? inv.total
+                : Number(inv.total ?? 0) || 0,
+            notes: "",
+            items: [],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }
+
+          setInvoices((prev) => [normalizedInvoice, ...prev])
         }
 
-        setInvoices((prev) => [normalizedInvoice, ...prev])
+        // ✅ AUTO-CREATE RENEWAL with default expiry (1 year from now)
+        const renewalAmount =
+          typeof customerData.recurringAmount === "number"
+            ? customerData.recurringAmount
+            : Number(customerData.recurringAmount ?? 0) || 0
+
+        const renewalService =
+          customerData.recurringService ||
+          customerData.service ||
+          (customerData as any).serviceType ||
+          ""
+
+        const expiryDate = new Date()
+        expiryDate.setFullYear(expiryDate.getFullYear() + 1)
+
+        const renewalData = {
+          customerId: c.id,
+          service: renewalService,
+          amount: renewalAmount || Number(customerData.totalValue ?? 0),
+          expiryDate: expiryDate.toISOString().split("T")[0],
+          status: "active",
+          reminderDays:
+            typeof customerData.defaultRenewalReminderDays === "number"
+              ? customerData.defaultRenewalReminderDays
+              : Number(customerData.defaultRenewalReminderDays ?? 30),
+          notes: customerData.defaultRenewalNotes || "",
+        }
+
+        try {
+          await addRenewal(renewalData as any)
+          console.log("Auto-created renewal for customer", c.id)
+        } catch (renewalErr) {
+          console.error("Failed to auto-create renewal:", renewalErr)
+        }
+
+        return true
       }
 
-      // ✅ AUTO-CREATE RENEWAL with default expiry (1 year from now)
-      const renewalAmount =
-        typeof customerData.recurringAmount === "number"
-          ? customerData.recurringAmount
-          : Number(customerData.recurringAmount ?? 0) || 0
-
-      const renewalService =
-        customerData.recurringService ||
-        customerData.service ||
-        customerData.serviceType ||
-        ""
-
-      const expiryDate = new Date()
-      expiryDate.setFullYear(expiryDate.getFullYear() + 1) // 1 year from now
-
-      const renewalData = {
-        customerId: c.id,
-        service: renewalService,
-        amount: renewalAmount || Number(customerData.totalValue ?? 0),
-        expiryDate: expiryDate.toISOString().split("T")[0], // YYYY-MM-DD
-        status: "active",
-        reminderDays:
-          typeof customerData.defaultRenewalReminderDays === "number"
-            ? customerData.defaultRenewalReminderDays
-            : Number(customerData.defaultRenewalReminderDays ?? 30),
-        notes: customerData.defaultRenewalNotes || "",
-      }
-
-      try {
-        await addRenewal(renewalData as any)
-        console.log("Auto-created renewal for customer", c.id)
-      } catch (renewalErr) {
-        console.error("Failed to auto-create renewal:", renewalErr)
-        // Don't fail customer creation if renewal fails
-      }
-
-      return true
+      return false
+    } catch (err) {
+      console.error("Failed to add customer:", err)
+      throw err
     }
-
-    return false
-  } catch (err) {
-    console.error("Failed to add customer:", err)
-    throw err
   }
-}
 
   const updateCustomer = async (
     id: string,
@@ -919,172 +862,6 @@ const addCustomer = async (
     }
   }
 
-  // Deal CRUD
-  const addDeal = async (
-    dealData: Omit<Deal, "id" | "createdAt" | "updatedAt">,
-  ): Promise<boolean> => {
-    try {
-      const formattedDealData = {
-        ...dealData,
-        expectedCloseDate: dealData.expectedCloseDate
-          ? dealData.expectedCloseDate instanceof Date
-            ? dealData.expectedCloseDate.toISOString()
-            : dealData.expectedCloseDate
-          : null,
-        ...(dealData.actualCloseDate && {
-          actualCloseDate:
-            dealData.actualCloseDate instanceof Date
-              ? dealData.actualCloseDate.toISOString()
-              : dealData.actualCloseDate,
-        }),
-        products: Array.isArray(dealData.products) ? dealData.products : [],
-      }
-
-      const response = await dealsApi.create(formattedDealData)
-
-      if (response.deal) {
-        const d = response.deal as Deal
-        setDeals((prev) => [
-          ...prev,
-          {
-            ...d,
-            createdAt: toDate(d.createdAt) ?? d.createdAt,
-            updatedAt: toDate(d.updatedAt) ?? d.updatedAt,
-            expectedCloseDate:
-              toDate(d.expectedCloseDate) ?? d.expectedCloseDate,
-          },
-        ])
-        return true
-      }
-      return false
-    } catch (err) {
-      console.error("Failed to add deal:", err)
-      return false
-    }
-  }
-
-  const updateDeal = async (
-    id: string,
-    dealData: Partial<Deal>,
-  ): Promise<boolean> => {
-    try {
-      const formattedDealData: any = { ...dealData }
-
-      if (dealData.expectedCloseDate) {
-        formattedDealData.expectedCloseDate =
-          dealData.expectedCloseDate instanceof Date
-            ? dealData.expectedCloseDate.toISOString()
-            : dealData.expectedCloseDate
-      }
-
-      if (dealData.actualCloseDate) {
-        formattedDealData.actualCloseDate =
-          dealData.actualCloseDate instanceof Date
-            ? dealData.actualCloseDate.toISOString()
-            : dealData.actualCloseDate
-      }
-
-      const response = await dealsApi.update(id, formattedDealData)
-
-      if (response.deal) {
-        const d = response.deal as Deal
-        setDeals((prev) =>
-          prev.map((deal) =>
-            deal.id === id
-              ? {
-                  ...d,
-                  createdAt: toDate(d.createdAt) ?? d.createdAt,
-                  updatedAt: toDate(d.updatedAt) ?? d.updatedAt,
-                  expectedCloseDate:
-                    toDate(d.expectedCloseDate) ?? d.expectedCloseDate,
-                }
-              : deal,
-          ),
-        )
-        return true
-      }
-      return false
-    } catch (err) {
-      console.error("Failed to update deal:", err)
-      return false
-    }
-  }
-
-  const deleteDeal = async (id: string): Promise<boolean> => {
-    try {
-      await dealsApi.delete(id)
-      setDeals((prev) => prev.filter((deal) => deal.id !== id))
-      return true
-    } catch (err) {
-      console.error("Failed to delete deal:", err)
-      return false
-    }
-  }
-
-  // Task CRUD
-  const addTask = async (
-    taskData: Omit<Task, "id" | "createdAt" | "updatedAt">,
-  ): Promise<boolean> => {
-    try {
-      const response = await tasksApi.create(taskData)
-      if (response.task) {
-        const t = response.task as Task
-        setTasks((prev) => [
-          ...prev,
-          {
-            ...t,
-            createdAt: toDate(t.createdAt) ?? t.createdAt,
-            updatedAt: toDate(t.updatedAt) ?? t.updatedAt,
-          },
-        ])
-        return true
-      }
-      return false
-    } catch (err) {
-      console.error("Failed to add task:", err)
-      return false
-    }
-  }
-
-  const updateTask = async (
-    id: string,
-    taskData: Partial<Task>,
-  ): Promise<boolean> => {
-    try {
-      const response = await tasksApi.update(id, taskData)
-      if (response.task) {
-        const t = response.task as Task
-        setTasks((prev) =>
-          prev.map((task) =>
-            task.id === id
-              ? {
-                  ...t,
-                  createdAt: toDate(t.createdAt) ?? t.createdAt,
-                  updatedAt: toDate(t.updatedAt) ?? t.updatedAt,
-                }
-              : task,
-          ),
-        )
-        return true
-      }
-      return false
-    } catch (err) {
-      console.error("Failed to update task:", err)
-      return false
-    }
-  }
-
-  const deleteTask = async (id: string): Promise<boolean> => {
-    try {
-      await tasksApi.delete(id)
-      setTasks((prev) => prev.filter((task) => task.id !== id))
-      return true
-    } catch (err) {
-      console.error("Failed to delete task:", err)
-      return false
-    }
-  }
-
   // Invoice CRUD
   const addInvoice = async (
     invoiceData: Omit<Invoice, "id" | "createdAt" | "updatedAt">,
@@ -1140,9 +917,26 @@ const addCustomer = async (
       if (response.invoice) {
         const inv = response.invoice as any
 
+        const amount =
+          typeof inv.amount === "number"
+            ? inv.amount
+            : invoiceData.amount
+        const tax =
+          typeof inv.tax === "number"
+            ? inv.tax
+            : invoiceData.tax
+        const discount =
+          typeof inv.discount === "number"
+            ? inv.discount
+            : invoiceData.discount ?? 0
+        const total =
+          typeof inv.total === "number"
+            ? inv.total
+            : amount + (amount * (tax ?? 0)) / 100 - discount
+
         const normalized: Invoice = {
           id: String(inv.id),
-          customerId: String(inv.customer_id ?? inv.customerId),
+          customerId: String(inv.customer_id ?? inv.customerId ?? invoiceData.customerId),
           customerName: inv.customer_name ?? invoiceData.customerName ?? "",
           invoiceNumber:
             inv.invoice_number ?? invoiceData.invoiceNumber,
@@ -1153,18 +947,10 @@ const addCustomer = async (
             toDate(inv.due_date ?? invoiceData.dueDate) ??
             (inv.due_date ?? invoiceData.dueDate),
           status: inv.status ?? invoiceData.status,
-          amount:
-            typeof inv.amount === "number"
-              ? inv.amount
-              : invoiceData.amount,
-          tax:
-            typeof inv.tax === "number"
-              ? inv.tax
-              : invoiceData.tax,
-          discount:
-            typeof inv.discount === "number"
-              ? inv.discount
-              : invoiceData.discount ?? 0,
+          amount,
+          tax: tax ?? 0,
+          discount,
+          total,
           notes: inv.notes ?? invoiceData.notes ?? "",
           items:
             Array.isArray(inv.items) && inv.items.length > 0
@@ -1186,113 +972,138 @@ const addCustomer = async (
     }
   }
 
-  const updateInvoice = async (
-    id: string,
-    invoiceData: Partial<Invoice>,
-    apiPayload?: any,
-  ): Promise<boolean> => {
-    try {
-      const payload =
-        apiPayload ??
-        (() => {
-          const subtotal =
-            invoiceData.items?.reduce(
-              (sum, it) => sum + (it.amount ?? 0),
-              0,
-            ) ?? invoiceData.amount
 
-          const taxNumber =
-            typeof invoiceData.tax === "number"
-              ? invoiceData.tax
-              : Number(invoiceData.tax ?? 0) || 0
+const updateInvoice = async (
+  id: string,
+  invoiceData: Partial<Invoice>,
+  apiPayload?: any,
+): Promise<boolean> => {
+  try {
+    const payload =
+      apiPayload ??
+      (() => {
+        const subtotal =
+          invoiceData.items?.reduce(
+            (sum, it) => sum + (it.amount ?? 0),
+            0,
+          ) ?? invoiceData.amount;
 
-          const discountNumber =
-            typeof invoiceData.discount === "number"
-              ? invoiceData.discount
-              : Number(invoiceData.discount ?? 0) || 0
+        const taxNumber =
+          typeof invoiceData.tax === "number"
+            ? invoiceData.tax
+            : Number(invoiceData.tax ?? 0) || 0;
 
-          const taxAmount =
-            (subtotal * (Number.isNaN(taxNumber) ? 0 : taxNumber)) / 100
-          const total =
-            subtotal +
-            taxAmount -
-            (Number.isNaN(discountNumber) ? 0 : discountNumber)
+        const discountNumber =
+          typeof invoiceData.discount === "number"
+            ? invoiceData.discount
+            : Number(invoiceData.discount ?? 0) || 0;
 
-          const base: any = {}
-          if (invoiceData.customerId) base.customerId = invoiceData.customerId
-          if (subtotal !== undefined) base.amount = subtotal
-          if (taxNumber !== undefined) base.tax = taxNumber
-          base.total = total
-          if (invoiceData.status) base.status = invoiceData.status
-          if (invoiceData.dueDate) base.dueDate = invoiceData.dueDate
-          if (invoiceData.notes !== undefined) base.notes = invoiceData.notes
+        const taxAmount =
+          (subtotal * (Number.isNaN(taxNumber) ? 0 : taxNumber)) / 100;
+        const total =
+          subtotal +
+          taxAmount -
+          (Number.isNaN(discountNumber) ? 0 : discountNumber);
 
-          if (invoiceData.items) {
-            base.items = invoiceData.items.map((it) => ({
-              description: it.description,
-              quantity: it.quantity,
-              rate: it.rate,
-              amount: it.amount,
-            }))
-          }
+        const base: any = {};
 
-          return base
-        })()
+        if (invoiceData.customerId) base.customerId = invoiceData.customerId;
+        if (subtotal !== undefined) base.amount = subtotal;
+        if (taxNumber !== undefined) base.tax = taxNumber;
+        base.total = total;
+        if (invoiceData.status) base.status = invoiceData.status;
 
-      const response = await invoicesApi.update(id, payload)
+        if (invoiceData.issueDate) base.issueDate = invoiceData.issueDate;
+        if (invoiceData.dueDate) base.dueDate = invoiceData.dueDate;
 
-      if (response.invoice) {
-        const inv = response.invoice as any
+        if (invoiceData.notes !== undefined) base.notes = invoiceData.notes;
 
-        const normalized: Invoice = {
-          id: String(inv.id),
-          customerId: String(inv.customer_id ?? inv.customerId),
-          customerName: inv.customer_name ?? invoiceData.customerName ?? "",
-          invoiceNumber:
-            inv.invoice_number ?? invoiceData.invoiceNumber ?? "",
-          issueDate:
-            toDate(inv.created_at ?? invoiceData.issueDate) ??
-            (inv.created_at ?? invoiceData.issueDate),
-          dueDate:
-            toDate(inv.due_date ?? invoiceData.dueDate) ??
-            (inv.due_date ?? invoiceData.dueDate),
-          status: inv.status ?? invoiceData.status ?? "draft",
-          amount:
-            typeof inv.amount === "number"
-              ? inv.amount
-              : invoiceData.amount ?? 0,
-          tax:
-            typeof inv.tax === "number"
-              ? inv.tax
-              : invoiceData.tax ?? 0,
-          discount:
-            typeof inv.discount === "number"
-              ? inv.discount
-              : invoiceData.discount ?? 0,
-          notes: inv.notes ?? invoiceData.notes ?? "",
-          items:
-            Array.isArray(inv.items) && inv.items.length > 0
-              ? inv.items
-              : invoiceData.items ?? [],
-          createdAt:
-            toDate(inv.created_at) ??
-            invoiceData.createdAt ??
-            new Date(),
-          updatedAt:
-            toDate(inv.updated_at) ?? new Date(),
+        if (invoiceData.items) {
+          base.items = invoiceData.items.map((it) => ({
+            description: it.description,
+            quantity: it.quantity,
+            rate: it.rate,
+            amount: it.amount,
+          }));
         }
 
-        setInvoices((prev) =>
-          prev.map((invoice) => (invoice.id === id ? normalized : invoice)),
-        )
-        return true
-      }
-      return false
-    } catch (err) {
-      console.error("Failed to update invoice:", err)
-      return false
+        return base;
+      })();
+
+    const response = await invoicesApi.update(id, payload);
+
+    if (response.invoice) {
+      const inv = response.invoice as any;
+
+      const amount =
+        typeof inv.amount === "number"
+          ? inv.amount
+          : invoiceData.amount ?? 0;
+      const tax =
+        typeof inv.tax === "number"
+          ? inv.tax
+          : invoiceData.tax ?? 0;
+      const discount =
+        typeof inv.discount === "number"
+          ? inv.discount
+          : invoiceData.discount ?? 0;
+      const total =
+        typeof inv.total === "number"
+          ? inv.total
+          : amount + (amount * tax) / 100 - discount;
+
+      const normalized: Invoice = {
+        id: String(inv.id),
+        customerId: String(
+          inv.customer_id ?? inv.customerId ?? invoiceData.customerId,
+        ),
+        customerName: inv.customer_name ?? invoiceData.customerName ?? "",
+        invoiceNumber:
+          inv.invoice_number ?? invoiceData.invoiceNumber ?? "",
+        issueDate:
+          toDate(inv.issue_date ?? inv.created_at ?? invoiceData.issueDate) ??
+          (inv.issue_date ?? inv.created_at ?? invoiceData.issueDate),
+        dueDate:
+          toDate(inv.due_date ?? invoiceData.dueDate) ??
+          (inv.due_date ?? invoiceData.dueDate),
+
+        // ✅ status logic fixed
+        status:
+          inv.status ??
+          invoiceData.status ??
+          (invoicesRef.current?.find((iv) => iv.id === id)?.status ??
+            "draft"),
+
+        amount,
+        tax,
+        discount,
+        total,
+        notes: inv.notes ?? invoiceData.notes ?? "",
+        items:
+          Array.isArray(inv.items) && inv.items.length > 0
+            ? inv.items
+            : invoiceData.items ?? [],
+        createdAt:
+          toDate(inv.created_at) ??
+          invoiceData.createdAt ??
+          new Date(),
+        updatedAt: toDate(inv.updated_at) ?? new Date(),
+      };
+
+      setInvoices((prev) =>
+        prev.map((invoice) => (invoice.id === id ? normalized : invoice)),
+      );
+      return true;
     }
+    return false;
+  } catch (err) {
+    console.error("Failed to update invoice:", err);
+    return false;
   }
+};
+
+
+
 
   const deleteInvoice = async (id: string): Promise<boolean> => {
     try {
@@ -1305,63 +1116,35 @@ const addCustomer = async (
     }
   }
 
-  // Renewal reminder CRUD
-  // const addRenewalReminder = async (
-  //   reminderData: Omit<RenewalReminder, "id" | "createdAt" | "updatedAt">,
-  // ): Promise<boolean> => {
-  //   try {
-  //     const response = await renewalsApi.createReminder(reminderData)
-  //     if (response.reminder) {
-  //       const rr = response.reminder as RenewalReminder
-  //       setRenewalReminders((prev) => [
-  //         ...prev,
-  //         {
-  //           ...rr,
-  //           createdAt: toDate(rr.createdAt) ?? rr.createdAt,
-  //           updatedAt: toDate(rr.updatedAt) ?? rr.updatedAt,
-  //         },
-  //       ])
-  //       return true
-  //     }
-  //     return false
-  //   } catch (err) {
-  //     console.error("Failed to add renewal reminder:", err)
-  //     return false
-  //   }
-  // }
-  
-
-
   const addRenewal = async (
-  renewalData: Omit<Renewal, "id" | "createdAt" | "updatedAt">,
-): Promise<boolean> => {
-  try {
-    // ✅ Auto-calculate expiry date from today + reminderDays
-    const reminderDays = renewalData.reminderDays ?? 30
-    const expiryDate = new Date()
-    expiryDate.setDate(expiryDate.getDate() + reminderDays)
+    renewalData: Omit<Renewal, "id" | "createdAt" | "updatedAt">,
+  ): Promise<boolean> => {
+    try {
+      const reminderDays = renewalData.reminderDays ?? 30
+      const expiryDate = new Date()
+      expiryDate.setDate(expiryDate.getDate() + reminderDays)
 
-    const payload = {
-      ...renewalData,
-      expiryDate: expiryDate.toISOString().split("T")[0], // YYYY-MM-DD format
-      reminderDays,
+      const payload = {
+        ...renewalData,
+        expiryDate: expiryDate.toISOString().split("T")[0],
+        reminderDays,
+      }
+
+      const response = await renewalsApi.create(payload)
+      console.log("CREATE RENEWAL RESPONSE", response)
+
+      if (response.renewal) {
+        const normalized = normalizeRenewal(response.renewal)
+        setRenewals((prev) => [normalized, ...prev])
+        return true
+      }
+
+      return false
+    } catch (err) {
+      console.error("Failed to add renewal:", err)
+      throw err
     }
-
-    const response = await renewalsApi.create(payload)
-    console.log("CREATE RENEWAL RESPONSE", response)
-
-    if (response.renewal) {
-      const normalized = normalizeRenewal(response.renewal)
-      setRenewals((prev) => [normalized, ...prev])
-      return true
-    }
-
-    return false
-  } catch (err) {
-    console.error("Failed to add renewal:", err)
-    throw err
   }
-}
 
   const updateRenewalReminder = async (
     _id: string,
@@ -1375,46 +1158,6 @@ const addCustomer = async (
     console.warn("Delete renewal reminder not implemented in backend yet")
     return false
   }
-
-  // Renewal CRUD
-  // const addRenewal = async (
-  //   renewalData: Omit<Renewal, "id" | "createdAt" | "updatedAt">,
-  // ): Promise<boolean> => {
-  //   try {
-  //     const response = await renewalsApi.create(renewalData)
-  //     if (response.renewal) {
-  //       const r = response.renewal as Renewal
-  //       setRenewals((prev) => [
-  //         ...prev,
-  //         {
-  //           ...r,
-  //           createdAt: toDate(r.createdAt) ?? r.createdAt,
-  //           updatedAt: toDate(r.updatedAt) ?? r.updatedAt,
-  //         },
-  //       ])
-  //       return true
-  //     }
-  //     return false
-  //   } catch (err) {
-  //     console.error("Failed to add renewal:", err)
-  //     return false
-  //   }
-  // }
-
-//   const addRenewal = async (renewalData: Omit<Renewal, "id" | "createdAt" | "updatedAt">) => {
-//   try {
-//     const response = await renewalsApi.create(renewalData)
-//     if (response.renewal) {
-//       const normalized = normalizeRenewal(response.renewal)
-//       setRenewals((prev) => [normalized, ...prev])
-//       return true
-//     }
-//     return false
-//   } catch (err) {
-//     console.error("Failed to add renewal:", err)
-//     throw err
-//   }
-// }
 
   const updateRenewal = async (
     id: string,
@@ -1478,16 +1221,9 @@ const addCustomer = async (
     updateLead,
     deleteLead,
     convertLead,
-    addDeal,
-    updateDeal,
-    deleteDeal,
-    addTask,
-    updateTask,
-    deleteTask,
     addInvoice,
     updateInvoice,
     deleteInvoice,
-    // renewalReminders,
     updateRenewalReminder,
     deleteRenewalReminder,
     addRenewal,
