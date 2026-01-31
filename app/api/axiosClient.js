@@ -2,7 +2,7 @@ import axios from "axios"
 
 const axiosClient = axios.create({
   
-  baseURL: "https://crm-api.vasifytech.com/api",
+  baseURL: process.env.NEXT_PUBLIC_API_URL,
   // baseURL: "http://localhost:5000/api",
 })
 
