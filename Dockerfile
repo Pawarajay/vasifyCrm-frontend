@@ -20,6 +20,8 @@ RUN pnpm build
 # Stage 2: runtime
 FROM node:22-alpine
 
+WORKDIR /app
+
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Security hardening
