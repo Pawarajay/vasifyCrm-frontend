@@ -92,7 +92,7 @@ export function LeadsContent() {
   const isAdmin = currentUser?.role === "admin";
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [creatorSearchTerm, setCreatorSearchTerm] = useState(""); // New state for creator search
+  const [creatorSearchTerm, setCreatorSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(
     leadFilters.status ?? "all",
   );
@@ -187,10 +187,40 @@ export function LeadsContent() {
     return user?.name || "Unknown";
   };
 
+  /**
+   * Whether the current user can convert a given lead to a customer.
+   *
+   * Rules:
+   *  - Admins can always convert.
+   *  - Non-admins can convert if they are the creator OR the assigned user.
+   *  - If createdBy AND assignedTo are both missing (data gap), allow conversion
+   *    so a non-admin is never completely locked out of a lead they can see.
+   */
+  const canConvertLead = (lead: Lead): boolean => {
+    // Admins can always convert
+    if (isAdmin) return true;
+
+    // If we can't identify the current user, allow rather than silently block
+    if (!currentUser) return true;
+
+    const currentId = String(currentUser.id);
+    const creatorId =
+      (lead as any).createdBy ?? (lead as any).created_by ?? null;
+    const assignedId =
+      (lead as any).assignedTo ?? (lead as any).assigned_to ?? null;
+
+    // If ownership data is missing entirely, allow rather than block
+    if (!creatorId && !assignedId) return true;
+
+    const isCreator = !!creatorId && String(creatorId) === currentId;
+    const isAssigned = !!assignedId && String(assignedId) === currentId;
+
+    return isCreator || isAssigned;
+  };
+
   const filteredLeads = useMemo(
     () =>
       leads.filter((lead) => {
-        // Main search (name, email, company, phone)
         const matchesSearch =
           !normalizedSearch ||
           (lead.name?.toLowerCase() ?? "").includes(normalizedSearch) ||
@@ -198,7 +228,6 @@ export function LeadsContent() {
           (lead.company?.toLowerCase() ?? "").includes(normalizedSearch) ||
           (lead.phone ?? "").includes(searchTerm);
 
-        // Creator name search
         const matchesCreator =
           !normalizedCreatorSearch ||
           getCreatorName(lead).toLowerCase().includes(normalizedCreatorSearch);
@@ -338,6 +367,12 @@ export function LeadsContent() {
         ? lead.estimatedValue
         : Number(lead.estimatedValue ?? 0);
 
+    const convertAllowed = lead.status === "closed-won" && canConvertLead(lead);
+
+    const onConvertClick = () => {
+      if (convertAllowed) handleConvert(lead);
+    };
+
     return (
       <Card
         key={lead.id}
@@ -404,10 +439,8 @@ export function LeadsContent() {
                   Edit
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() =>
-                    lead.status === "closed-won" && handleConvert(lead)
-                  }
-                  disabled={lead.status !== "closed-won"}
+                  onClick={onConvertClick}
+                  disabled={!convertAllowed}
                 >
                   <UserCheck className="mr-2 h-4 w-4" />
                   Convert to Customer
@@ -511,7 +544,7 @@ export function LeadsContent() {
               />
             </div>
 
-            {/* New Creator Search Bar */}
+            {/* Creator Search Bar */}
             <div className="relative min-w-[220px] max-w-sm">
               <UserPlus className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <Input
@@ -707,6 +740,11 @@ export function LeadsContent() {
                           ? lead.estimatedValue
                           : Number(lead.estimatedValue ?? 0);
 
+                      const convertAllowed = lead.status === "closed-won" && canConvertLead(lead);
+                      const onConvertClick = () => {
+                        if (convertAllowed) handleConvert(lead);
+                      };
+
                       return (
                         <TableRow
                           key={lead.id}
@@ -820,11 +858,8 @@ export function LeadsContent() {
                                   Edit
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
-                                  onClick={() =>
-                                    lead.status === "closed-won" &&
-                                    handleConvert(lead)
-                                  }
-                                  disabled={lead.status !== "closed-won"}
+                                  onClick={onConvertClick}
+                                  disabled={!convertAllowed}
                                 >
                                   <UserCheck className="mr-2 h-4 w-4" />
                                   Convert to Customer
@@ -930,4 +965,3 @@ export function LeadsContent() {
     </div>
   );
 }
-
